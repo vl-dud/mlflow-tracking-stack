@@ -1,5 +1,3 @@
-version: '3.7'
-
 services:
     minio:
         restart: always
@@ -87,7 +85,7 @@ services:
         labels:
             ofelia.enabled: "true"
             ofelia.job-exec.datecron.schedule: "@every 6h"
-            ofelia.job-exec.datecron.command: "mlflow gc --backend-store-uri postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}"
+            ofelia.job-exec.datecron.command: "mlflow gc --all-workspaces --backend-store-uri postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME} --tracking-uri=127.0.0.1:5000"
 
 volumes:
     db_volume:
