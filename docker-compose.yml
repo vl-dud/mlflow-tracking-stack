@@ -43,7 +43,7 @@ services:
             - POSTGRES_USER=${DB_USER}
             - POSTGRES_PASSWORD=${DB_PASSWORD}
         volumes:
-            - db_volume:/var/lib/mysql
+            - db_volume:/var/lib/postgresql/data
         healthcheck:
             test: [
                 "CMD-SHELL",
