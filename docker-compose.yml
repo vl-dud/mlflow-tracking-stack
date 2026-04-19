@@ -12,13 +12,12 @@ services:
             - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY}
         volumes:
             - minio_volume:/data
-
-    minio_healthcheck:
-        image: curlimages/curl
-        container_name: mlflow_minio_healthcheck
-        depends_on:
-            - minio
-        command: ["sh", "-c", "while ! curl -f http://minio:${MINIO_PORT}/minio/health/live; do sleep 10; done && exit 0"]
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:${MINIO_PORT}/minio/health/live"]
+            interval: 60s
+            timeout: 5s
+            retries: 3
+            start_period: 60s
 
     mc:
         image: minio/mc
