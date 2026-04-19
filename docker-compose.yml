@@ -2,7 +2,7 @@ services:
     minio:
         restart: always
         image: minio/minio
-        container_name: mlflow_minio
+        container_name: mts_minio
         ports:
             - "${MINIO_PORT}:${MINIO_PORT}"
             - "${MINIO_CONSOLE_PORT}:${MINIO_CONSOLE_PORT}"
@@ -11,7 +11,7 @@ services:
             - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID}
             - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY}
         volumes:
-            - minio_volume:/data
+            - mts_minio_volume:/data
         healthcheck:
             test: ["CMD", "curl", "-f", "http://localhost:${MINIO_PORT}/minio/health/live"]
             interval: 60s
@@ -21,9 +21,9 @@ services:
 
     mc:
         image: minio/mc
-        container_name: mlflow_mc
+        container_name: mts_minio_client
         depends_on:
-            minio_healthcheck:
+            minio:
                 condition: service_completed_successfully
         environment:
             - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
@@ -34,7 +34,7 @@ services:
     db:
         restart: always
         image: postgres:17.8
-        container_name: mlflow_db
+        container_name: mts_db
         expose:
             - "${DB_PORT}"
         environment:
@@ -42,7 +42,7 @@ services:
             - POSTGRES_USER=${DB_USER}
             - POSTGRES_PASSWORD=${DB_PASSWORD}
         volumes:
-            - db_volume:/var/lib/postgresql/data
+            - mts_db_volume:/var/lib/postgresql/data
         healthcheck:
             test: [
                 "CMD-SHELL",
@@ -58,7 +58,7 @@ services:
         image: mcuadros/ofelia:latest
         depends_on:
             - server
-        container_name: mlflow_ofelia
+        container_name: mts_ofelia
         command: daemon --docker
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -66,8 +66,8 @@ services:
     server:
         restart: always
         build: .
-        image: mlflow_server
-        container_name: mlflow_server
+        image: mts_server
+        container_name: mts_server
         depends_on:
             mc:
                 condition: service_started
@@ -87,5 +87,5 @@ services:
             ofelia.job-exec.datecron.command: "mlflow gc --all-workspaces --backend-store-uri postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME} --tracking-uri=127.0.0.1:5000"
 
 volumes:
-    db_volume:
-    minio_volume:
+    mts_db_volume:
+    mts_minio_volume:
