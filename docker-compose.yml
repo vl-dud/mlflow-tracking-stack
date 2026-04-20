@@ -11,7 +11,7 @@ services:
             - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID}
             - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY}
         volumes:
-            - mts_minio_volume:/data
+            - mts_minio:/data
         healthcheck:
             test: ["CMD", "curl", "-f", "http://localhost:${MINIO_PORT}/minio/health/live"]
             interval: 60s
@@ -19,17 +19,41 @@ services:
             retries: 3
             start_period: 60s
 
-    mc:
-        image: minio/mc
+    minio_client:
+        build:
+            context: .
+            dockerfile: Dockerfile.minio-client
         container_name: mts_minio_client
         depends_on:
             minio:
-                condition: service_completed_successfully
+                condition: service_healthy
         environment:
             - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
             - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-        entrypoint: >
-            /bin/sh -c "/usr/bin/mc alias set minio http://minio:${MINIO_PORT} ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY} && /usr/bin/mc mb minio/mlflow; exit 0;"
+        entrypoint:
+            - /bin/sh
+            - -c
+            - >
+                mc alias set minio
+                http://minio:${MINIO_PORT} ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY} &&
+                mc mb --ignore-existing minio/mlflow &&
+                mc version enable minio/mlflow || true &&
+                sleep infinity
+        volumes:
+            - ./scripts/minio/restore_last_backup.sh:/usr/local/bin/restore_last_backup.sh:ro
+            - mts_minio_backup:/backups
+        labels:
+            ofelia.enabled: "true"
+            ofelia.job-exec.minio-backup.schedule: "@every 12h"
+            ofelia.job-exec.minio-backup.command: >
+                sh -c 'ts=$$(date +%Y-%m-%d_%H-%M-%S) &&
+                workdir="/tmp/minio_backup_$${ts}" &&
+                mkdir -p "$$workdir/mlflow" &&
+                mc alias set minio http://minio:${MINIO_PORT} ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY} &&
+                mc mirror --overwrite --remove minio/mlflow "$$workdir/mlflow" &&
+                tar -czf "/backups/minio_mlflow_$${ts}.tar.gz" -C "$$workdir" mlflow &&
+                rm -rf "$$workdir" &&
+                find /backups -type f -name "minio_mlflow_*.tar.gz" -mtime +7 -delete'
 
     db:
         restart: always
@@ -42,16 +66,37 @@ services:
             - POSTGRES_USER=${DB_USER}
             - POSTGRES_PASSWORD=${DB_PASSWORD}
         volumes:
-            - mts_db_volume:/var/lib/postgresql/data
+            - mts_db:/var/lib/postgresql/data
         healthcheck:
-            test: [
-                "CMD-SHELL",
-                "pg_isready -U ${DB_USER} -d ${DB_NAME} -p ${DB_PORT}"
-            ]
+            test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME} -p ${DB_PORT}"]
             interval: 60s
             timeout: 5s
             retries: 3
             start_period: 60s
+
+    db_backup:
+        restart: always
+        image: postgres:17.8
+        container_name: mts_db_backup
+        depends_on:
+            db:
+                condition: service_healthy
+        environment:
+            - PGPASSWORD=${DB_PASSWORD}
+            - POSTGRES_DB=${DB_NAME}
+            - POSTGRES_USER=${DB_USER}
+        volumes:
+            - ./scripts/postgres/restore_last_backup.sh:/usr/local/bin/restore_last_backup.sh:ro
+            - mts_db_backup:/backups
+        command: [ "sleep", "infinity" ]
+        labels:
+            ofelia.enabled: "true"
+            ofelia.job-exec.pgdump.schedule: "@every 12h"
+            ofelia.job-exec.pgdump.command: >
+                sh -c 'ts=$$(date +%Y-%m-%d_%H-%M-%S) && 
+                pg_dump -h db -p 5432 
+                -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -Fc -f "/backups/$${POSTGRES_DB}_$${ts}.dump" && 
+                find /backups -type f -name "*.dump" -mtime +7 -delete'
 
     ofelia:
         restart: always
@@ -69,7 +114,7 @@ services:
         image: mts_server
         container_name: mts_server
         depends_on:
-            mc:
+            minio_client:
                 condition: service_started
             db:
                 condition: service_healthy
@@ -80,12 +125,19 @@ services:
             - MLFLOW_S3_ENDPOINT_URL=http://minio:${MINIO_PORT}
             - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
             - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-        command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME} --default-artifact-root ${DEFAULT_ARTIFACT_ROOT}
+        command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri
+            postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}
+            --default-artifact-root ${DEFAULT_ARTIFACT_ROOT}
         labels:
             ofelia.enabled: "true"
-            ofelia.job-exec.datecron.schedule: "@every 6h"
-            ofelia.job-exec.datecron.command: "mlflow gc --all-workspaces --backend-store-uri postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME} --tracking-uri=127.0.0.1:5000"
+            ofelia.job-exec.datecron.schedule: "@every 24h"
+            ofelia.job-exec.datecron.command: "mlflow gc --all-workspaces
+                --backend-store-uri
+                postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/$\
+                {DB_NAME} --tracking-uri=127.0.0.1:5000"
 
 volumes:
-    mts_db_volume:
-    mts_minio_volume:
+    mts_db:
+    mts_db_backup:
+    mts_minio:
+    mts_minio_backup:

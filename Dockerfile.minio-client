@@ -1,0 +1,9 @@
+FROM minio/mc AS mc
+
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates tar gzip
+
+COPY --from=mc /usr/bin/mc /usr/local/bin/mc
+
+CMD ["sleep", "infinity"]
