@@ -40,7 +40,7 @@ services:
                 mc version enable minio/mlflow || true &&
                 sleep infinity
         volumes:
-            - ./scripts/minio/restore_last_backup.sh:/usr/local/bin/restore_last_backup.sh:ro
+            - ./scripts/minio/restore_backup.sh:/usr/local/bin/restore_backup.sh:ro
             - mts_minio_backup:/backups
         labels:
             ofelia.enabled: "true"
