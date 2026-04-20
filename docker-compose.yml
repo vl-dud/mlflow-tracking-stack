@@ -86,7 +86,7 @@ services:
             - POSTGRES_DB=${DB_NAME}
             - POSTGRES_USER=${DB_USER}
         volumes:
-            - ./scripts/postgres/restore_last_backup.sh:/usr/local/bin/restore_last_backup.sh:ro
+            - ./scripts/postgres/restore_backup.sh:/usr/local/bin/restore_backup.sh:ro
             - mts_db_backup:/backups
         command: [ "sleep", "infinity" ]
         labels:
