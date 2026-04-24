@@ -122,6 +122,8 @@ services:
             - "${MLFLOW_SERVER_PORT}:5000"
         environment:
             - MLFLOW_ENABLE_WORKSPACES=1
+            - MLFLOW_DISABLE_TELEMETRY=1
+            - DO_NOT_TRACK=1
             - MLFLOW_S3_ENDPOINT_URL=http://minio:${MINIO_PORT}
             - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
             - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
